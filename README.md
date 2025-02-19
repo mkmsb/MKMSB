@@ -24,25 +24,6 @@ By utilizing **smart contracts (Solidity)**, MKMSB ensures **transparency, secur
 
 ---
 
-## 📦 Installation & Deployment  
-
-```sh
-# Clone the repository
-git clone https://github.com/username/MKMSB.git
-cd MKMSB
-
-# Install dependencies (if using Hardhat or Truffle)
-npm install
-
-# Run tests
-npx hardhat test
-```
-
-🚀 **Deploy Smart Contract to a Test Network:**  
-```sh
-npx hardhat run scripts/deploy.js --network testnet
-```
-
 ---
 
 ## 🏗️ Future Development Plans  
