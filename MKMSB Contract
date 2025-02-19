@@ -1,0 +1,111 @@
+
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.26;
+
+import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+
+contract MKMSBToken is Initializable, ERC20Upgradeable, OwnableUpgradeable {
+    uint256 public maxSupply;
+    address public feeWallet;
+    uint256 public constant buyFee = 0.1 * 10 ** 18; // $0.1 buy fee
+    uint256 public constant sellFee = 0.5 * 10 ** 18; // $0.5 sell fee
+    uint256 public constant stakingRewardPool = 200_000_000 * 10 ** 18; // 20% allocated for staking rewards
+    uint256 public lastPayoutTime;
+    uint256 public constant PAYOUT_INTERVAL = 90 days; // Quarterly distribution
+
+    struct Staker {
+        uint256 amount;
+        uint256 startTime;
+    }
+
+    mapping(address => Staker) public stakers;
+    address[] public stakingParticipants;
+
+    function initialize(address _feeWallet) public initializer {
+        __ERC20_init("MKMSB Token", "MKMSB");
+        __Ownable_init();
+        maxSupply = 1_000_000_000 * 10 ** decimals();
+        _mint(msg.sender, maxSupply - stakingRewardPool);
+        _mint(address(this), stakingRewardPool);
+        feeWallet = _feeWallet;
+        lastPayoutTime = block.timestamp;
+    }
+
+    function burn(uint256 amount) external onlyOwner {
+        require(balanceOf(msg.sender) >= amount, "Insufficient balance to burn");
+        _burn(msg.sender, amount);
+        maxSupply -= amount;
+    }
+
+    function mint(uint256 amount) external onlyOwner {
+        require(totalSupply() + amount <= maxSupply, "Cannot exceed max supply");
+        _mint(msg.sender, amount);
+    }
+
+    function updateFeeWallet(address newWallet) external onlyOwner {
+        feeWallet = newWallet;
+    }
+
+    function stakeTokens(uint256 amount) external {
+        require(balanceOf(msg.sender) >= amount, "Insufficient balance");
+        require(stakers[msg.sender].amount == 0, "Already staking tokens");
+
+        _transfer(msg.sender, address(this), amount);
+        stakers[msg.sender] = Staker(amount, block.timestamp);
+        stakingParticipants.push(msg.sender);
+    }
+
+    function distributeStakingRewards() external onlyOwner {
+        for (uint256 i = 0; i < stakingParticipants.length; i++) {
+            address staker = stakingParticipants[i];
+            if (stakers[staker].amount > 0) {
+                uint256 stakingTime = block.timestamp - stakers[staker].startTime;
+                uint256 rewardPercentage = getRewardPercentage(stakingTime);
+                uint256 reward = (stakers[staker].amount * rewardPercentage) / 100;
+
+                require(balanceOf(address(this)) >= reward, "Not enough reward balance");
+                _transfer(address(this), staker, reward);
+            }
+        }
+    }
+
+    function getRewardPercentage(uint256 stakingTime) internal pure returns (uint256) {
+        if (stakingTime >= 360 days) return 7.5;
+        if (stakingTime >= 180 days) return 5;
+        if (stakingTime >= 90 days) return 3;
+        if (stakingTime >= 60 days) return 1.5;
+        return 0;
+    }
+
+    function distributeQuarterlyPayout(uint256 stablecoinAmount) external onlyOwner {
+        require(block.timestamp >= lastPayoutTime + PAYOUT_INTERVAL, "Not time for distribution yet");
+        require(stablecoinAmount > 0, "Stablecoin deposit required");
+
+        uint256 totalStaked = getTotalStakedAmount();
+        require(totalStaked > 0, "No eligible investors");
+
+        for (uint256 i = 0; i < stakingParticipants.length; i++) {
+            address investor = stakingParticipants[i];
+            uint256 investorShare = (stakers[investor].amount * stablecoinAmount) / totalStaked;
+            payable(investor).transfer(investorShare);
+        }
+
+        lastPayoutTime = block.timestamp;
+    }
+
+    function getTotalStakedAmount() internal view returns (uint256 total) {
+        for (uint256 i = 0; i < stakingParticipants.length; i++) {
+            total += stakers[stakingParticipants[i]].amount;
+        }
+    }
+
+    function getAllStakers() external view returns (address[] memory) {
+        return stakingParticipants;
+    }
+
+    function getStakingInfo(address investor) external view returns (uint256, uint256) {
+        return (stakers[investor].amount, stakers[investor].startTime);
+    }
+}
